@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { ArrowLeft, FileText, X, Eye } from 'lucide-react';
+import { ArrowLeft, FileText, X, Eye, Copy } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Invoice } from '@/types/invoice';
@@ -9,10 +8,11 @@ import InvoicePreview from './InvoicePreview';
 interface SavedInvoicesProps {
   invoices: Invoice[];
   onDelete: (id: string) => void;
+  onDuplicate: (invoice: Invoice) => void;
   onBack: () => void;
 }
 
-const SavedInvoices: React.FC<SavedInvoicesProps> = ({ invoices, onDelete, onBack }) => {
+const SavedInvoices: React.FC<SavedInvoicesProps> = ({ invoices, onDelete, onDuplicate, onBack }) => {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
   if (selectedInvoice) {
@@ -121,6 +121,15 @@ const SavedInvoices: React.FC<SavedInvoicesProps> = ({ invoices, onDelete, onBac
                       >
                         <Eye className="w-4 h-4 mr-2" />
                         View
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onDuplicate(invoice)}
+                        className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white"
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicate
                       </Button>
                     </div>
                     <Button

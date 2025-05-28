@@ -13,12 +13,17 @@ export interface VendorInfo {
   address?: string;
   email?: string;
   gst?: string;
+  logo?: string;
+  upiId?: string;
+  customFooter?: string;
 }
 
 export interface CustomerInfo {
+  id?: string;
   name: string;
   phone: string;
   address?: string;
+  lastUsed?: string;
 }
 
 export interface Invoice {
@@ -35,4 +40,25 @@ export interface Invoice {
   discountAmount: number;
   total: number;
   notes?: string;
+  showUpiQr?: boolean;
+}
+
+export interface BusinessProfile {
+  name: string;
+  phone: string;
+  address?: string;
+  email?: string;
+  gst?: string;
+  logo?: string;
+  upiId?: string;
+  customFooter?: string;
+}
+
+export interface Analytics {
+  totalRevenue: number;
+  monthlyRevenue: number;
+  topCustomers: { name: string; total: number; count: number }[];
+  topItems: { name: string; quantity: number; revenue: number }[];
+  totalInvoices: number;
+  monthlyInvoices: number;
 }

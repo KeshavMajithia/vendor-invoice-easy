@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X, Search } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,11 +12,14 @@ import InvoicePreview from './InvoicePreview';
 interface InvoiceFormProps {
   onSave: (invoice: Invoice) => void;
   onBack: () => void;
+  duplicateFrom?: Invoice | null;
 }
 
-const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
+const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom }) => {
   const [vendor, setVendor] = useState<VendorInfo>({ name: '', phone: '' });
   const [customer, setCustomer] = useState<CustomerInfo>({ name: '', phone: '' });
+  const [customerSuggestions, setCustomerSuggestions] = useState<CustomerInfo[]>([]);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [items, setItems] = useState<LineItem[]>([
     { id: '1', name: '', quantity: 1, price: 0, total: 0 }
   ]);
@@ -27,14 +29,43 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
   const [discountRate, setDiscountRate] = useState(0);
   const [notes, setNotes] = useState('Thank you for your business!');
   const [showPreview, setShowPreview] = useState(false);
+  const [showUpiQr, setShowUpiQr] = useState(false);
 
-  // Load vendor info from localStorage on component mount
+  // Load vendor info and customers on component mount
   useEffect(() => {
-    const savedVendor = localStorage.getItem('vendorInfo');
-    if (savedVendor) {
-      setVendor(JSON.parse(savedVendor));
+    // Load business profile as vendor info
+    const savedProfile = localStorage.getItem('businessProfile');
+    if (savedProfile) {
+      const profile = JSON.parse(savedProfile);
+      setVendor(profile);
+    } else {
+      // Fallback to old vendor info
+      const savedVendor = localStorage.getItem('vendorInfo');
+      if (savedVendor) {
+        setVendor(JSON.parse(savedVendor));
+      }
+    }
+
+    // Load customers for suggestions
+    const savedCustomers = localStorage.getItem('customers');
+    if (savedCustomers) {
+      setCustomerSuggestions(JSON.parse(savedCustomers));
     }
   }, []);
+
+  // Handle duplication
+  useEffect(() => {
+    if (duplicateFrom) {
+      setCustomer(duplicateFrom.customer);
+      setItems(duplicateFrom.items.map(item => ({ ...item, id: Date.now().toString() + Math.random() })));
+      setTaxEnabled(duplicateFrom.taxRate > 0);
+      setTaxRate(duplicateFrom.taxRate || 18);
+      setDiscountEnabled(duplicateFrom.discountRate > 0);
+      setDiscountRate(duplicateFrom.discountRate || 0);
+      setNotes(duplicateFrom.notes || 'Thank you for your business!');
+      setShowUpiQr(duplicateFrom.showUpiQr || false);
+    }
+  }, [duplicateFrom]);
 
   // Save vendor info to localStorage whenever it changes
   useEffect(() => {
@@ -42,6 +73,23 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
       localStorage.setItem('vendorInfo', JSON.stringify(vendor));
     }
   }, [vendor]);
+
+  const handleCustomerNameChange = (value: string) => {
+    setCustomer({ ...customer, name: value });
+    if (value.length > 0) {
+      const filtered = customerSuggestions.filter(c => 
+        c.name.toLowerCase().includes(value.toLowerCase())
+      );
+      setShowCustomerSuggestions(filtered.length > 0);
+    } else {
+      setShowCustomerSuggestions(false);
+    }
+  };
+
+  const selectCustomer = (selectedCustomer: CustomerInfo) => {
+    setCustomer(selectedCustomer);
+    setShowCustomerSuggestions(false);
+  };
 
   const addItem = () => {
     const newItem: LineItem = {
@@ -86,7 +134,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
   const { subtotal, discountAmount, taxAmount, total } = calculateTotals();
 
   const generateInvoice = (): Invoice => {
-    const invoiceNumber = `INV-${Date.now()}`;
+    const invoiceNumber = duplicateFrom ? `INV-${Date.now()}` : `INV-${Date.now()}`;
     return {
       invoiceNumber,
       date: new Date().toISOString().split('T')[0],
@@ -99,7 +147,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
       discountRate: discountEnabled ? discountRate : 0,
       discountAmount,
       total,
-      notes
+      notes,
+      showUpiQr
     };
   };
 
@@ -131,14 +180,19 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
-          <h1 className="text-3xl font-bold text-gray-800">Create New Invoice</h1>
+          <h1 className="text-3xl font-bold text-gray-800">
+            {duplicateFrom ? 'Duplicate Invoice' : 'Create New Invoice'}
+          </h1>
+          {duplicateFrom && (
+            <p className="text-gray-600 mt-2">Duplicating from {duplicateFrom.invoiceNumber}</p>
+          )}
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8">
           {/* Vendor Information */}
           <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
             <CardHeader>
-              <CardTitle className="text-xl text-gray-800">Vendor Information</CardTitle>
+              <CardTitle className="text-xl text-gray-800">Business Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -190,15 +244,31 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
               <CardTitle className="text-xl text-gray-800">Customer Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
+              <div className="relative">
                 <Label htmlFor="customerName">Customer Name *</Label>
                 <Input
                   id="customerName"
                   value={customer.name}
-                  onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
-                  placeholder="Customer name"
+                  onChange={(e) => handleCustomerNameChange(e.target.value)}
+                  placeholder="Start typing customer name..."
                   className="mt-1"
                 />
+                {showCustomerSuggestions && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                    {customerSuggestions.filter(c => 
+                      c.name.toLowerCase().includes(customer.name.toLowerCase())
+                    ).map((suggestion) => (
+                      <div
+                        key={suggestion.id}
+                        className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                        onClick={() => selectCustomer(suggestion)}
+                      >
+                        <div className="font-medium">{suggestion.name}</div>
+                        <div className="text-sm text-gray-600">{suggestion.phone}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <Label htmlFor="customerPhone">Phone Number</Label>
@@ -343,6 +413,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack }) => {
                   />
                 </div>
               )}
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Show UPI QR Code</Label>
+                  <p className="text-sm text-gray-600">Display QR for quick payments</p>
+                </div>
+                <Switch checked={showUpiQr} onCheckedChange={setShowUpiQr} />
+              </div>
 
               <div>
                 <Label htmlFor="notes">Notes</Label>
