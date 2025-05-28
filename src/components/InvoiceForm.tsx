@@ -6,16 +6,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import { Invoice, LineItem, VendorInfo, CustomerInfo } from '@/types/invoice';
+import { User } from '@supabase/supabase-js';
 import InvoicePreview from './InvoicePreview';
 
 interface InvoiceFormProps {
-  onSave: (invoice: Invoice) => void;
+  onSave: (invoice: Omit<Invoice, 'id'>) => void;
   onBack: () => void;
   duplicateFrom?: Invoice | null;
+  templateData?: any | null;
+  user: User | null;
 }
 
-const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom }) => {
+const InvoiceForm: React.FC<InvoiceFormProps> = ({ 
+  onSave, 
+  onBack, 
+  duplicateFrom, 
+  templateData,
+  user 
+}) => {
   const [vendor, setVendor] = useState<VendorInfo>({ name: '', phone: '' });
   const [customer, setCustomer] = useState<CustomerInfo>({ name: '', phone: '' });
   const [customerSuggestions, setCustomerSuggestions] = useState<CustomerInfo[]>([]);
@@ -30,28 +41,26 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom
   const [notes, setNotes] = useState('Thank you for your business!');
   const [showPreview, setShowPreview] = useState(false);
   const [showUpiQr, setShowUpiQr] = useState(false);
+  const { toast } = useToast();
 
   // Load vendor info and customers on component mount
   useEffect(() => {
-    // Load business profile as vendor info
-    const savedProfile = localStorage.getItem('businessProfile');
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile);
-      setVendor(profile);
-    } else {
-      // Fallback to old vendor info
-      const savedVendor = localStorage.getItem('vendorInfo');
-      if (savedVendor) {
-        setVendor(JSON.parse(savedVendor));
-      }
-    }
+    loadVendorInfo();
+    loadCustomers();
+  }, [user]);
 
-    // Load customers for suggestions
-    const savedCustomers = localStorage.getItem('customers');
-    if (savedCustomers) {
-      setCustomerSuggestions(JSON.parse(savedCustomers));
+  // Handle template data
+  useEffect(() => {
+    if (templateData) {
+      if (templateData.vendor) setVendor(templateData.vendor);
+      if (templateData.items) setItems(templateData.items);
+      if (templateData.taxEnabled !== undefined) setTaxEnabled(templateData.taxEnabled);
+      if (templateData.taxRate !== undefined) setTaxRate(templateData.taxRate);
+      if (templateData.discountEnabled !== undefined) setDiscountEnabled(templateData.discountEnabled);
+      if (templateData.discountRate !== undefined) setDiscountRate(templateData.discountRate);
+      if (templateData.notes) setNotes(templateData.notes);
     }
-  }, []);
+  }, [templateData]);
 
   // Handle duplication
   useEffect(() => {
@@ -67,12 +76,54 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom
     }
   }, [duplicateFrom]);
 
-  // Save vendor info to localStorage whenever it changes
-  useEffect(() => {
-    if (vendor.name || vendor.phone) {
-      localStorage.setItem('vendorInfo', JSON.stringify(vendor));
+  const loadVendorInfo = async () => {
+    if (!user) return;
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setVendor({
+          name: profile.business_name || '',
+          phone: profile.business_phone || '',
+          address: profile.business_address || '',
+          email: user.email || '',
+          gst: profile.business_gstin || ''
+        });
+      }
+    } catch (error) {
+      // Use fallback vendor info from localStorage if Supabase fails
+      const savedVendor = localStorage.getItem('vendorInfo');
+      if (savedVendor) {
+        setVendor(JSON.parse(savedVendor));
+      }
     }
-  }, [vendor]);
+  };
+
+  const loadCustomers = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCustomerSuggestions(data || []);
+    } catch (error) {
+      // Use fallback customers from localStorage if Supabase fails
+      const savedCustomers = localStorage.getItem('customers');
+      if (savedCustomers) {
+        setCustomerSuggestions(JSON.parse(savedCustomers));
+      }
+    }
+  };
 
   const handleCustomerNameChange = (value: string) => {
     setCustomer({ ...customer, name: value });
@@ -133,7 +184,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom
 
   const { subtotal, discountAmount, taxAmount, total } = calculateTotals();
 
-  const generateInvoice = (): Invoice => {
+  const generateInvoice = (): Omit<Invoice, 'id'> => {
     const invoiceNumber = duplicateFrom ? `INV-${Date.now()}` : `INV-${Date.now()}`;
     return {
       invoiceNumber,
@@ -161,7 +212,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom
   if (showPreview) {
     return (
       <InvoicePreview 
-        invoice={generateInvoice()} 
+        invoice={generateInvoice() as Invoice} 
         onBack={() => setShowPreview(false)}
         onSave={handleSave}
       />
@@ -181,10 +232,13 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ onSave, onBack, duplicateFrom
             Back to Dashboard
           </Button>
           <h1 className="text-3xl font-bold text-gray-800">
-            {duplicateFrom ? 'Duplicate Invoice' : 'Create New Invoice'}
+            {duplicateFrom ? 'Duplicate Invoice' : templateData ? 'Create from Template' : 'Create New Invoice'}
           </h1>
           {duplicateFrom && (
             <p className="text-gray-600 mt-2">Duplicating from {duplicateFrom.invoiceNumber}</p>
+          )}
+          {templateData && (
+            <p className="text-gray-600 mt-2">Using template data</p>
           )}
         </div>
 

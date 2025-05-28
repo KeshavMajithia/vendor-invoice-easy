@@ -21,7 +21,8 @@ export interface VendorInfo {
 export interface CustomerInfo {
   id?: string;
   name: string;
-  phone: string;
+  phone?: string;
+  email?: string;
   address?: string;
   lastUsed?: string;
 }
@@ -61,4 +62,33 @@ export interface Analytics {
   topItems: { name: string; quantity: number; revenue: number }[];
   totalInvoices: number;
   monthlyInvoices: number;
+}
+
+export interface Customer {
+  id: string;
+  user_id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  template_data: any;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SharedInvoice {
+  id: string;
+  invoice_id: string;
+  share_token: string;
+  created_at: string;
+  expires_at?: string;
+  is_active: boolean;
 }

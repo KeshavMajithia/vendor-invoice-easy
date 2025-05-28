@@ -1,4 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
+import { User, Session } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
 import LandingPage from '@/components/LandingPage';
 import AuthPage from '@/components/AuthPage';
 import BusinessSetup from '@/components/BusinessSetup';
@@ -8,115 +11,313 @@ import SavedInvoices from '@/components/SavedInvoices';
 import CustomerList from '@/components/CustomerList';
 import Analytics from '@/components/Analytics';
 import BusinessProfile from '@/components/BusinessProfile';
+import InvoiceTemplates from '@/components/InvoiceTemplates';
+import SharedInvoiceView from '@/components/SharedInvoiceView';
 import { BusinessProfile as BusinessProfileType, Invoice } from '@/types/invoice';
+import { useToast } from '@/hooks/use-toast';
 
-type AppState = 'landing' | 'auth' | 'setup' | 'dashboard' | 'create-invoice' | 'saved-invoices' | 'customers' | 'analytics' | 'business-profile';
+type AppState = 'landing' | 'auth' | 'setup' | 'dashboard' | 'create-invoice' | 'saved-invoices' | 'customers' | 'analytics' | 'business-profile' | 'templates' | 'shared-invoice';
 
 const Index = () => {
   const [currentState, setCurrentState] = useState<AppState>('landing');
-  const [user, setUser] = useState<{ email: string; businessName: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isPro, setIsPro] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [duplicateInvoice, setDuplicateInvoice] = useState<Invoice | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [sharedToken, setSharedToken] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Check if user is already logged in
-    const savedUser = localStorage.getItem('quickvyapaar_user');
-    const savedProfile = localStorage.getItem('businessProfile');
-    
-    if (savedUser && savedProfile) {
-      setUser(JSON.parse(savedUser));
-      setCurrentState('dashboard');
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Check if user has completed business setup
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+            
+          if (profile && profile.business_name) {
+            setCurrentState('dashboard');
+          } else {
+            setCurrentState('setup');
+          }
+          
+          // Load user's invoices
+          loadInvoices();
+        } else {
+          setCurrentState('landing');
+        }
+        setLoading(false);
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // Check for shared invoice token in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+      setSharedToken(token);
+      setCurrentState('shared-invoice');
     }
 
-    // Load saved invoices
-    const savedInvoices = localStorage.getItem('quickvyapaar_invoices');
-    if (savedInvoices) {
-      setInvoices(JSON.parse(savedInvoices));
-    }
+    return () => subscription.unsubscribe();
   }, []);
+
+  const loadInvoices = async () => {
+    if (!session?.user) return;
+    
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load invoices",
+        variant: "destructive"
+      });
+    } else {
+      setInvoices(data || []);
+    }
+  };
 
   const handleGetStarted = () => {
     setCurrentState('auth');
   };
 
   const handleLogin = async (email: string, password: string) => {
-    // In a real app, this would integrate with Supabase
-    console.log('Login:', { email, password });
-    
-    // Mock successful login
-    const userData = { email, businessName: 'Sample Business' };
-    setUser(userData);
-    localStorage.setItem('quickvyapaar_user', JSON.stringify(userData));
-    
-    const existingProfile = localStorage.getItem('businessProfile');
-    if (existingProfile) {
-      setCurrentState('dashboard');
-    } else {
-      setCurrentState('setup');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Success",
+        description: "Logged in successfully!"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
     }
   };
 
   const handleSignup = async (email: string, password: string, businessName: string) => {
-    // In a real app, this would integrate with Supabase
-    console.log('Signup:', { email, password, businessName });
-    
-    // Mock successful signup
-    const userData = { email, businessName };
-    setUser(userData);
-    localStorage.setItem('quickvyapaar_user', JSON.stringify(userData));
-    setCurrentState('setup');
-  };
-
-  const handleGoogleSignIn = async () => {
-    // In a real app, this would integrate with Supabase Google Auth
-    console.log('Google Sign In');
-    
-    // Mock successful Google login
-    const userData = { email: 'user@gmail.com', businessName: 'Google Business' };
-    setUser(userData);
-    localStorage.setItem('quickvyapaar_user', JSON.stringify(userData));
-    setCurrentState('setup');
-  };
-
-  const handleBusinessSetupComplete = (profile: BusinessProfileType) => {
-    localStorage.setItem('businessProfile', JSON.stringify(profile));
-    setCurrentState('dashboard');
-  };
-
-  const handleBusinessSetupSkip = () => {
-    // Create minimal profile
-    const minimalProfile = {
-      name: user?.businessName || 'My Business',
-      phone: '',
-      customFooter: 'Thank you for your business!'
-    };
-    localStorage.setItem('businessProfile', JSON.stringify(minimalProfile));
-    setCurrentState('dashboard');
-  };
-
-  const handleSaveInvoice = (invoice: Invoice) => {
-    const invoiceWithId = { ...invoice, id: Date.now().toString() };
-    const updatedInvoices = [...invoices, invoiceWithId];
-    setInvoices(updatedInvoices);
-    localStorage.setItem('quickvyapaar_invoices', JSON.stringify(updatedInvoices));
-    
-    // Save customer to customer list
-    const savedCustomers = localStorage.getItem('customers');
-    const customers = savedCustomers ? JSON.parse(savedCustomers) : [];
-    const existingCustomer = customers.find((c: any) => c.phone === invoice.customer.phone);
-    
-    if (!existingCustomer) {
-      const customerWithId = { ...invoice.customer, id: Date.now().toString(), lastUsed: new Date().toISOString() };
-      customers.push(customerWithId);
-      localStorage.setItem('customers', JSON.stringify(customers));
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            business_name: businessName
+          }
+        }
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Success",
+        description: "Account created successfully! Please check your email for verification."
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
     }
   };
 
-  const handleDeleteInvoice = (id: string) => {
-    const updatedInvoices = invoices.filter(invoice => invoice.id !== id);
-    setInvoices(updatedInvoices);
-    localStorage.setItem('quickvyapaar_invoices', JSON.stringify(updatedInvoices));
+  const handleGoogleSignIn = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}`
+        }
+      });
+      
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleBusinessSetupComplete = async (profile: BusinessProfileType) => {
+    if (!user) return;
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          business_name: profile.name,
+          business_phone: profile.phone,
+          business_address: profile.address,
+          business_gstin: profile.gst
+        });
+        
+      if (error) throw error;
+      
+      setCurrentState('dashboard');
+      toast({
+        title: "Success",
+        description: "Business profile setup completed!"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleBusinessSetupSkip = async () => {
+    if (!user) return;
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          business_name: 'My Business'
+        });
+        
+      if (error) throw error;
+      
+      setCurrentState('dashboard');
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSaveInvoice = async (invoice: Omit<Invoice, 'id'>) => {
+    if (!user) return;
+    
+    try {
+      const invoiceData = {
+        user_id: user.id,
+        invoice_number: invoice.invoiceNumber,
+        invoice_date: invoice.date,
+        client_name: invoice.customer.name,
+        client_email: invoice.customer.email || null,
+        client_address: invoice.customer.address || null,
+        items: invoice.items,
+        subtotal: invoice.subtotal,
+        tax_amount: invoice.taxAmount,
+        total_amount: invoice.total,
+        status: 'draft'
+      };
+      
+      const { data, error } = await supabase
+        .from('invoices')
+        .insert(invoiceData)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      await loadInvoices();
+      toast({
+        title: "Success",
+        description: "Invoice saved successfully!"
+      });
+      
+      // Also save customer if new
+      await saveCustomer(invoice.customer);
+      
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveCustomer = async (customer: any) => {
+    if (!user || !customer.name) return;
+    
+    try {
+      // Check if customer already exists
+      const { data: existing } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('name', customer.name)
+        .single();
+        
+      if (!existing) {
+        await supabase
+          .from('customers')
+          .insert({
+            user_id: user.id,
+            name: customer.name,
+            email: customer.email || null,
+            phone: customer.phone || null,
+            address: customer.address || null
+          });
+      }
+    } catch (error) {
+      // Ignore errors for customer saving
+    }
+  };
+
+  const handleDeleteInvoice = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      await loadInvoices();
+      toast({
+        title: "Success",
+        description: "Invoice deleted successfully!"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   };
 
   const handleDuplicateInvoice = (invoice: Invoice) => {
@@ -124,8 +325,15 @@ const Index = () => {
     setCurrentState('create-invoice');
   };
 
+  const handleUseTemplate = (template: any) => {
+    setSelectedTemplate(template);
+    setCurrentState('create-invoice');
+  };
+
   const handleNavigate = (section: string) => {
-    setDuplicateInvoice(null); // Clear duplicate state when navigating
+    setDuplicateInvoice(null);
+    setSelectedTemplate(null);
+    
     switch (section) {
       case 'create-invoice':
         setCurrentState('create-invoice');
@@ -142,27 +350,49 @@ const Index = () => {
       case 'business-profile':
         setCurrentState('business-profile');
         break;
+      case 'templates':
+        setCurrentState('templates');
+        break;
       case 'upgrade':
-        // Handle upgrade to Pro
         setIsPro(true);
-        alert('Upgraded to Pro! (Mock implementation)');
+        toast({
+          title: "Upgraded to Pro!",
+          description: "You now have access to all premium features."
+        });
         break;
       default:
         setCurrentState('dashboard');
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('quickvyapaar_user');
-    localStorage.removeItem('businessProfile');
-    setUser(null);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setCurrentState('landing');
+    setUser(null);
+    setSession(null);
+    setInvoices([]);
   };
 
   const handleBackToDashboard = () => {
     setDuplicateInvoice(null);
+    setSelectedTemplate(null);
     setCurrentState('dashboard');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentState === 'shared-invoice' && sharedToken) {
+    return <SharedInvoiceView token={sharedToken} onBack={() => setCurrentState('landing')} />;
+  }
 
   if (currentState === 'landing') {
     return <LandingPage onGetStarted={handleGetStarted} />;
@@ -193,7 +423,7 @@ const Index = () => {
       <Dashboard
         onNavigate={handleNavigate}
         onLogout={handleLogout}
-        businessName={user?.businessName || 'My Business'}
+        businessName={user?.user_metadata?.business_name || 'My Business'}
         isPro={isPro}
       />
     );
@@ -205,6 +435,8 @@ const Index = () => {
         onSave={handleSaveInvoice}
         onBack={handleBackToDashboard}
         duplicateFrom={duplicateInvoice}
+        templateData={selectedTemplate}
+        user={user}
       />
     );
   }
@@ -216,20 +448,31 @@ const Index = () => {
         onDelete={handleDeleteInvoice}
         onDuplicate={handleDuplicateInvoice}
         onBack={handleBackToDashboard}
+        user={user}
       />
     );
   }
 
   if (currentState === 'customers') {
-    return <CustomerList onBack={handleBackToDashboard} />;
+    return <CustomerList onBack={handleBackToDashboard} user={user} />;
   }
 
   if (currentState === 'analytics') {
-    return <Analytics onBack={handleBackToDashboard} />;
+    return <Analytics onBack={handleBackToDashboard} user={user} />;
   }
 
   if (currentState === 'business-profile') {
-    return <BusinessProfile onBack={handleBackToDashboard} />;
+    return <BusinessProfile onBack={handleBackToDashboard} user={user} />;
+  }
+
+  if (currentState === 'templates') {
+    return (
+      <InvoiceTemplates 
+        onBack={handleBackToDashboard}
+        onUseTemplate={handleUseTemplate}
+        user={user}
+      />
+    );
   }
 
   return <LandingPage onGetStarted={handleGetStarted} />;
