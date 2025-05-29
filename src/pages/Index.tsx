@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -445,7 +444,7 @@ const Index = () => {
   }
 
   if (currentState === 'customers') {
-    return <CustomerList onBack={handleBackToDashboard} />;
+    return <CustomerList onBack={handleBackToDashboard} user={user} />;
   }
 
   if (currentState === 'analytics') {
