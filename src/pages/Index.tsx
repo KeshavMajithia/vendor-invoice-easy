@@ -14,6 +14,7 @@ import BusinessProfile from '@/components/BusinessProfile';
 import InvoiceTemplates from '@/components/InvoiceTemplates';
 import SharedInvoiceView from '@/components/SharedInvoiceView';
 import { BusinessProfile as BusinessProfileType, Invoice } from '@/types/invoice';
+import { transformDatabaseInvoice, transformInvoiceForDatabase } from '@/utils/invoiceTransforms';
 import { useToast } from '@/hooks/use-toast';
 
 type AppState = 'landing' | 'auth' | 'setup' | 'dashboard' | 'create-invoice' | 'saved-invoices' | 'customers' | 'analytics' | 'business-profile' | 'templates' | 'shared-invoice';
@@ -94,7 +95,9 @@ const Index = () => {
         variant: "destructive"
       });
     } else {
-      setInvoices(data || []);
+      // Transform database invoices to frontend Invoice type
+      const transformedInvoices = (data || []).map(transformDatabaseInvoice);
+      setInvoices(transformedInvoices);
     }
   };
 
@@ -229,19 +232,7 @@ const Index = () => {
     if (!user) return;
     
     try {
-      const invoiceData = {
-        user_id: user.id,
-        invoice_number: invoice.invoiceNumber,
-        invoice_date: invoice.date,
-        client_name: invoice.customer.name,
-        client_email: invoice.customer.email || null,
-        client_address: invoice.customer.address || null,
-        items: invoice.items,
-        subtotal: invoice.subtotal,
-        tax_amount: invoice.taxAmount,
-        total_amount: invoice.total,
-        status: 'draft'
-      };
+      const invoiceData = transformInvoiceForDatabase(invoice, user.id);
       
       const { data, error } = await supabase
         .from('invoices')
@@ -454,15 +445,15 @@ const Index = () => {
   }
 
   if (currentState === 'customers') {
-    return <CustomerList onBack={handleBackToDashboard} user={user} />;
+    return <CustomerList onBack={handleBackToDashboard} />;
   }
 
   if (currentState === 'analytics') {
-    return <Analytics onBack={handleBackToDashboard} user={user} />;
+    return <Analytics onBack={handleBackToDashboard} />;
   }
 
   if (currentState === 'business-profile') {
-    return <BusinessProfile onBack={handleBackToDashboard} user={user} />;
+    return <BusinessProfile onBack={handleBackToDashboard} />;
   }
 
   if (currentState === 'templates') {
