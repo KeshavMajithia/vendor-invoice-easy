@@ -231,6 +231,61 @@ const Index = () => {
     }
   };
 
+  const handleAuthLogin = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleAuthSignup = async (email: string, password: string, businessName: string) => {
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { business_name: businessName }
+        }
+      });
+      if (error) throw error;
+      
+      toast({
+        title: "Success",
+        description: "Account created successfully! Please check your email to verify your account."
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -251,17 +306,16 @@ const Index = () => {
         return (
           <LandingPage 
             onGetStarted={() => setView('auth')} 
-            onSignIn={() => setView('auth')} 
           />
         );
 
       case 'auth':
         return (
           <AuthPage 
-            onSuccess={() => {
-              // Auth state change will handle navigation
-            }} 
-            onBack={() => setView('landing')} 
+            onBack={() => setView('landing')}
+            onLogin={handleAuthLogin}
+            onSignup={handleAuthSignup}
+            onGoogleSignIn={handleGoogleSignIn}
           />
         );
 
@@ -269,7 +323,7 @@ const Index = () => {
         return (
           <BusinessSetup 
             onComplete={handleBusinessSetupComplete}
-            user={user}
+            onSkip={handleBusinessSetupComplete}
           />
         );
 
@@ -318,7 +372,6 @@ const Index = () => {
         return (
           <InvoiceTemplates
             onBack={() => setView('dashboard')}
-            onCreateFromTemplate={handleCreateFromTemplate}
             user={user}
           />
         );
@@ -335,7 +388,6 @@ const Index = () => {
         return (
           <Analytics
             onBack={() => setView('dashboard')}
-            invoices={invoices}
           />
         );
 
@@ -343,7 +395,6 @@ const Index = () => {
         return (
           <BusinessProfile
             onBack={() => setView('dashboard')}
-            user={user}
           />
         );
 
@@ -364,7 +415,6 @@ const Index = () => {
         return (
           <LandingPage 
             onGetStarted={() => setView('auth')} 
-            onSignIn={() => setView('auth')} 
           />
         );
     }
