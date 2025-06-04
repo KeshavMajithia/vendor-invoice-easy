@@ -1,248 +1,155 @@
+
 import React, { useState, useEffect } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { transformDatabaseInvoice, transformInvoiceForDatabase } from '@/utils/invoiceTransforms';
+import { Invoice } from '@/types/invoice';
+import { User } from '@supabase/supabase-js';
+
+// Component imports
 import LandingPage from '@/components/LandingPage';
 import AuthPage from '@/components/AuthPage';
-import BusinessSetup from '@/components/BusinessSetup';
 import Dashboard from '@/components/Dashboard';
 import InvoiceForm from '@/components/InvoiceForm';
 import SavedInvoices from '@/components/SavedInvoices';
+import InvoiceTemplates from '@/components/InvoiceTemplates';
 import CustomerList from '@/components/CustomerList';
 import Analytics from '@/components/Analytics';
 import BusinessProfile from '@/components/BusinessProfile';
-import InvoiceTemplates from '@/components/InvoiceTemplates';
+import BusinessSetup from '@/components/BusinessSetup';
 import SharedInvoiceView from '@/components/SharedInvoiceView';
-import { BusinessProfile as BusinessProfileType, Invoice } from '@/types/invoice';
-import { transformDatabaseInvoice, transformInvoiceForDatabase } from '@/utils/invoiceTransforms';
-import { useToast } from '@/hooks/use-toast';
 
-type AppState = 'landing' | 'auth' | 'setup' | 'dashboard' | 'create-invoice' | 'saved-invoices' | 'customers' | 'analytics' | 'business-profile' | 'templates' | 'shared-invoice';
+type View = 'landing' | 'auth' | 'dashboard' | 'create' | 'saved' | 'templates' | 'customers' | 'analytics' | 'profile' | 'setup' | 'shared';
 
 const Index = () => {
-  const [currentState, setCurrentState] = useState<AppState>('landing');
+  const [searchParams] = useSearchParams();
+  const [view, setView] = useState<View>('landing');
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isPro, setIsPro] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [duplicateInvoice, setDuplicateInvoice] = useState<Invoice | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
-  const [sharedToken, setSharedToken] = useState<string | null>(null);
+  const [templateData, setTemplateData] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Check if user has completed business setup
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-            
-          if (profile && profile.business_name) {
-            setCurrentState('dashboard');
-          } else {
-            setCurrentState('setup');
-          }
-          
-          // Load user's invoices
-          loadInvoices();
-        } else {
-          setCurrentState('landing');
-        }
-        setLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    // Check for shared invoice token
+    const shareToken = searchParams.get('token');
+    if (shareToken) {
+      setView('shared');
       setLoading(false);
-    });
-
-    // Check for shared invoice token in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    if (token) {
-      setSharedToken(token);
-      setCurrentState('shared-invoice');
+      return;
     }
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const loadInvoices = async () => {
-    if (!session?.user) return;
+    // Check authentication
+    checkAuth();
     
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        setUser(session.user);
+        checkBusinessSetup(session.user);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setView('landing');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [searchParams]);
+
+  const checkAuth = async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error('Auth error:', error);
+        setView('landing');
+        return;
+      }
+
+      if (session?.user) {
+        setUser(session.user);
+        await checkBusinessSetup(session.user);
+      } else {
+        setView('landing');
+      }
+    } catch (error) {
+      console.error('Failed to check auth:', error);
+      setView('landing');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkBusinessSetup = async (currentUser: User) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('business_name, business_phone')
+        .eq('id', currentUser.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Profile fetch error:', error);
+      }
+
+      if (!profile?.business_name || !profile?.business_phone) {
+        setView('setup');
+      } else {
+        setView('dashboard');
+        await loadInvoices(currentUser);
+      }
+    } catch (error) {
+      console.error('Business setup check failed:', error);
+      setView('dashboard'); // Fallback to dashboard
+    }
+  };
+
+  const loadInvoices = async (currentUser: User) => {
+    if (!currentUser) return;
+
     try {
       const { data, error } = await supabase
         .from('invoices')
         .select('*')
-        .eq('user_id', session.user.id)
+        .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false });
-        
+
       if (error) {
-        console.error('Error loading invoices:', error);
+        console.error('Failed to load invoices:', error);
         toast({
-          title: "Error",
-          description: "Failed to load invoices",
+          title: "Warning",
+          description: "Could not load invoices. You can still create new ones.",
           variant: "destructive"
         });
         return;
       }
-      
-      // Transform database invoices to frontend Invoice type
-      const transformedInvoices = (data || []).map(transformDatabaseInvoice);
-      setInvoices(transformedInvoices);
+
+      if (data) {
+        const transformedInvoices = data.map(transformDatabaseInvoice);
+        setInvoices(transformedInvoices);
+      }
     } catch (error) {
-      console.error('Unexpected error loading invoices:', error);
+      console.error('Invoice loading error:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while loading invoices",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleGetStarted = () => {
-    setCurrentState('auth');
-  };
-
-  const handleLogin = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      
-      if (error) throw error;
-      
-      toast({
-        title: "Success",
-        description: "Logged in successfully!"
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleSignup = async (email: string, password: string, businessName: string) => {
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            business_name: businessName
-          }
-        }
-      });
-      
-      if (error) throw error;
-      
-      toast({
-        title: "Success",
-        description: "Account created successfully! Please check your email for verification."
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}`
-        }
-      });
-      
-      if (error) throw error;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleBusinessSetupComplete = async (profile: BusinessProfileType) => {
-    if (!user) return;
-    
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          email: user.email || '',
-          business_name: profile.name,
-          business_phone: profile.phone,
-          business_address: profile.address,
-          business_gstin: profile.gst
-        });
-        
-      if (error) throw error;
-      
-      setCurrentState('dashboard');
-      toast({
-        title: "Success",
-        description: "Business profile setup completed!"
-      });
-    } catch (error: any) {
-      console.error('Error completing business setup:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to complete business setup",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleBusinessSetupSkip = async () => {
-    if (!user) return;
-    
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          email: user.email || '',
-          business_name: 'My Business'
-        });
-        
-      if (error) throw error;
-      
-      setCurrentState('dashboard');
-    } catch (error: any) {
-      console.error('Error skipping business setup:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to skip business setup",
+        description: "Failed to load invoices",
         variant: "destructive"
       });
     }
   };
 
   const handleSaveInvoice = async (invoice: Omit<Invoice, 'id'>) => {
-    if (!user) return;
-    
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to save invoices",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       const invoiceData = transformInvoiceForDatabase(invoice, user.id);
       
@@ -251,20 +158,24 @@ const Index = () => {
         .insert(invoiceData)
         .select()
         .single();
-        
+
       if (error) throw error;
-      
-      await loadInvoices();
-      toast({
-        title: "Success",
-        description: "Invoice saved successfully!"
-      });
-      
-      // Also save customer if new
-      await saveCustomer(invoice.customer);
-      
+
+      if (data) {
+        const newInvoice = transformDatabaseInvoice(data);
+        setInvoices(prev => [newInvoice, ...prev]);
+        
+        toast({
+          title: "Success",
+          description: "Invoice saved successfully!"
+        });
+        
+        setView('dashboard');
+        setDuplicateInvoice(null);
+        setTemplateData(null);
+      }
     } catch (error: any) {
-      console.error('Error saving invoice:', error);
+      console.error('Save invoice error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to save invoice",
@@ -273,53 +184,29 @@ const Index = () => {
     }
   };
 
-  const saveCustomer = async (customer: any) => {
-    if (!user || !customer.name) return;
-    
-    try {
-      // Check if customer already exists
-      const { data: existing } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('name', customer.name)
-        .maybeSingle();
-        
-      if (!existing) {
-        await supabase
-          .from('customers')
-          .insert({
-            user_id: user.id,
-            name: customer.name,
-            email: customer.email || null,
-            phone: customer.phone || null,
-            address: customer.address || null
-          });
-      }
-    } catch (error) {
-      console.error('Error saving customer:', error);
-      // Ignore errors for customer saving
-    }
-  };
+  const handleDeleteInvoice = async (invoiceId: string) => {
+    if (!user) return;
 
-  const handleDeleteInvoice = async (id: string) => {
     try {
       const { error } = await supabase
         .from('invoices')
         .delete()
-        .eq('id', id);
-        
+        .eq('id', invoiceId)
+        .eq('user_id', user.id);
+
       if (error) throw error;
+
+      setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
       
-      await loadInvoices();
       toast({
         title: "Success",
         description: "Invoice deleted successfully!"
       });
     } catch (error: any) {
+      console.error('Delete invoice error:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to delete invoice",
         variant: "destructive"
       });
     }
@@ -327,63 +214,24 @@ const Index = () => {
 
   const handleDuplicateInvoice = (invoice: Invoice) => {
     setDuplicateInvoice(invoice);
-    setCurrentState('create-invoice');
+    setTemplateData(null);
+    setView('create');
   };
 
-  const handleUseTemplate = (template: any) => {
-    setSelectedTemplate(template);
-    setCurrentState('create-invoice');
-  };
-
-  const handleNavigate = (section: string) => {
+  const handleCreateFromTemplate = (template: any) => {
+    setTemplateData(template);
     setDuplicateInvoice(null);
-    setSelectedTemplate(null);
-    
-    switch (section) {
-      case 'create-invoice':
-        setCurrentState('create-invoice');
-        break;
-      case 'saved-invoices':
-        setCurrentState('saved-invoices');
-        break;
-      case 'customers':
-        setCurrentState('customers');
-        break;
-      case 'analytics':
-        setCurrentState('analytics');
-        break;
-      case 'business-profile':
-        setCurrentState('business-profile');
-        break;
-      case 'templates':
-        setCurrentState('templates');
-        break;
-      case 'upgrade':
-        setIsPro(true);
-        toast({
-          title: "Upgraded to Pro!",
-          description: "You now have access to all premium features."
-        });
-        break;
-      default:
-        setCurrentState('dashboard');
+    setView('create');
+  };
+
+  const handleBusinessSetupComplete = () => {
+    setView('dashboard');
+    if (user) {
+      loadInvoices(user);
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setCurrentState('landing');
-    setUser(null);
-    setSession(null);
-    setInvoices([]);
-  };
-
-  const handleBackToDashboard = () => {
-    setDuplicateInvoice(null);
-    setSelectedTemplate(null);
-    setCurrentState('dashboard');
-  };
-
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
@@ -395,92 +243,148 @@ const Index = () => {
     );
   }
 
-  if (currentState === 'shared-invoice' && sharedToken) {
-    return <SharedInvoiceView token={sharedToken} onBack={() => setCurrentState('landing')} />;
-  }
+  // Error boundary
+  try {
+    // Render based on current view
+    switch (view) {
+      case 'landing':
+        return (
+          <LandingPage 
+            onGetStarted={() => setView('auth')} 
+            onSignIn={() => setView('auth')} 
+          />
+        );
 
-  if (currentState === 'landing') {
-    return <LandingPage onGetStarted={handleGetStarted} />;
-  }
+      case 'auth':
+        return (
+          <AuthPage 
+            onSuccess={() => {
+              // Auth state change will handle navigation
+            }} 
+            onBack={() => setView('landing')} 
+          />
+        );
 
-  if (currentState === 'auth') {
+      case 'setup':
+        return (
+          <BusinessSetup 
+            onComplete={handleBusinessSetupComplete}
+            user={user}
+          />
+        );
+
+      case 'dashboard':
+        return (
+          <Dashboard
+            onCreateInvoice={() => {
+              setDuplicateInvoice(null);
+              setTemplateData(null);
+              setView('create');
+            }}
+            onViewSaved={() => setView('saved')}
+            onViewTemplates={() => setView('templates')}
+            onViewCustomers={() => setView('customers')}
+            onViewAnalytics={() => setView('analytics')}
+            onViewProfile={() => setView('profile')}
+            invoiceCount={invoices.length}
+            totalRevenue={invoices.reduce((sum, inv) => sum + inv.total, 0)}
+            user={user}
+          />
+        );
+
+      case 'create':
+        return (
+          <InvoiceForm
+            onSave={handleSaveInvoice}
+            onBack={() => setView('dashboard')}
+            duplicateFrom={duplicateInvoice}
+            templateData={templateData}
+            user={user}
+          />
+        );
+
+      case 'saved':
+        return (
+          <SavedInvoices
+            invoices={invoices}
+            onDelete={handleDeleteInvoice}
+            onDuplicate={handleDuplicateInvoice}
+            onBack={() => setView('dashboard')}
+            user={user}
+          />
+        );
+
+      case 'templates':
+        return (
+          <InvoiceTemplates
+            onBack={() => setView('dashboard')}
+            onCreateFromTemplate={handleCreateFromTemplate}
+            user={user}
+          />
+        );
+
+      case 'customers':
+        return (
+          <CustomerList
+            onBack={() => setView('dashboard')}
+            user={user}
+          />
+        );
+
+      case 'analytics':
+        return (
+          <Analytics
+            onBack={() => setView('dashboard')}
+            invoices={invoices}
+          />
+        );
+
+      case 'profile':
+        return (
+          <BusinessProfile
+            onBack={() => setView('dashboard')}
+            user={user}
+          />
+        );
+
+      case 'shared':
+        const shareToken = searchParams.get('token');
+        if (!shareToken) {
+          setView('landing');
+          return null;
+        }
+        return (
+          <SharedInvoiceView
+            token={shareToken}
+            onBack={() => setView('landing')}
+          />
+        );
+
+      default:
+        return (
+          <LandingPage 
+            onGetStarted={() => setView('auth')} 
+            onSignIn={() => setView('auth')} 
+          />
+        );
+    }
+  } catch (error) {
+    console.error('Render error:', error);
     return (
-      <AuthPage
-        onBack={() => setCurrentState('landing')}
-        onLogin={handleLogin}
-        onSignup={handleSignup}
-        onGoogleSignIn={handleGoogleSignIn}
-      />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">Something went wrong</h2>
+          <p className="text-gray-600 mb-4">Please refresh the page to try again.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Refresh Page
+          </button>
+        </div>
+      </div>
     );
   }
-
-  if (currentState === 'setup') {
-    return (
-      <BusinessSetup
-        onComplete={handleBusinessSetupComplete}
-        onSkip={handleBusinessSetupSkip}
-      />
-    );
-  }
-
-  if (currentState === 'dashboard') {
-    return (
-      <Dashboard
-        onNavigate={handleNavigate}
-        onLogout={handleLogout}
-        businessName={user?.user_metadata?.business_name || 'My Business'}
-        isPro={isPro}
-      />
-    );
-  }
-
-  if (currentState === 'create-invoice') {
-    return (
-      <InvoiceForm 
-        onSave={handleSaveInvoice}
-        onBack={handleBackToDashboard}
-        duplicateFrom={duplicateInvoice}
-        templateData={selectedTemplate}
-        user={user}
-      />
-    );
-  }
-
-  if (currentState === 'saved-invoices') {
-    return (
-      <SavedInvoices 
-        invoices={invoices}
-        onDelete={handleDeleteInvoice}
-        onDuplicate={handleDuplicateInvoice}
-        onBack={handleBackToDashboard}
-        user={user}
-      />
-    );
-  }
-
-  if (currentState === 'customers') {
-    return <CustomerList onBack={handleBackToDashboard} user={user} />;
-  }
-
-  if (currentState === 'analytics') {
-    return <Analytics onBack={handleBackToDashboard} />;
-  }
-
-  if (currentState === 'business-profile') {
-    return <BusinessProfile onBack={handleBackToDashboard} />;
-  }
-
-  if (currentState === 'templates') {
-    return (
-      <InvoiceTemplates 
-        onBack={handleBackToDashboard}
-        onUseTemplate={handleUseTemplate}
-        user={user}
-      />
-    );
-  }
-
-  return <LandingPage onGetStarted={handleGetStarted} />;
 };
 
 export default Index;

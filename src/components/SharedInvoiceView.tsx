@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Download, Share2 } from 'lucide-react';
+import { ArrowLeft, Share2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { transformDatabaseInvoice } from '@/utils/invoiceTransforms';
 import InvoicePreview from './InvoicePreview';
 
 interface SharedInvoiceViewProps {
@@ -19,11 +20,19 @@ const SharedInvoiceView: React.FC<SharedInvoiceViewProps> = ({ token, onBack }) 
   const { toast } = useToast();
 
   useEffect(() => {
-    loadSharedInvoice();
+    if (token) {
+      loadSharedInvoice();
+    } else {
+      setError('No token provided');
+      setLoading(false);
+    }
   }, [token]);
 
   const loadSharedInvoice = async () => {
     try {
+      setLoading(true);
+      setError(null);
+
       // First get the shared invoice record
       const { data: sharedData, error: sharedError } = await supabase
         .from('shared_invoices')
@@ -32,7 +41,14 @@ const SharedInvoiceView: React.FC<SharedInvoiceViewProps> = ({ token, onBack }) 
         .eq('is_active', true)
         .single();
 
-      if (sharedError) throw new Error('Invoice not found or link has expired');
+      if (sharedError) {
+        console.error('Shared invoice error:', sharedError);
+        throw new Error('Invoice not found or link has expired');
+      }
+
+      if (!sharedData) {
+        throw new Error('Shared invoice not found');
+      }
 
       // Check if the share link has expired
       if (sharedData.expires_at && new Date(sharedData.expires_at) < new Date()) {
@@ -43,34 +59,12 @@ const SharedInvoiceView: React.FC<SharedInvoiceViewProps> = ({ token, onBack }) 
         throw new Error('Invoice data not found');
       }
 
-      // Transform the invoice data to match our frontend format
-      const invoiceData = sharedData.invoices;
-      const transformedInvoice = {
-        id: invoiceData.id,
-        invoiceNumber: invoiceData.invoice_number,
-        date: invoiceData.invoice_date,
-        vendor: {
-          name: 'Business Name', // We'll get this from the user's profile
-          phone: '',
-          address: '',
-          email: '',
-          gst: ''
-        },
-        customer: {
-          name: invoiceData.client_name,
-          email: invoiceData.client_email,
-          address: invoiceData.client_address
-        },
-        items: invoiceData.items || [],
-        subtotal: invoiceData.subtotal,
-        taxAmount: invoiceData.tax_amount,
-        total: invoiceData.total_amount,
-        notes: 'Thank you for your business!'
-      };
-
+      // Transform the invoice data using our utility function
+      const transformedInvoice = transformDatabaseInvoice(sharedData.invoices);
       setInvoice(transformedInvoice);
     } catch (error: any) {
-      setError(error.message);
+      console.error('Failed to load shared invoice:', error);
+      setError(error.message || 'Failed to load invoice');
     } finally {
       setLoading(false);
     }
@@ -113,7 +107,16 @@ const SharedInvoiceView: React.FC<SharedInvoiceViewProps> = ({ token, onBack }) 
   }
 
   if (!invoice) {
-    return null;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">No invoice data available</p>
+          <Button onClick={onBack} className="mt-4" variant="outline">
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
