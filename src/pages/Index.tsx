@@ -81,22 +81,33 @@ const Index = () => {
   const loadInvoices = async () => {
     if (!session?.user) return;
     
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
+        
+      if (error) {
+        console.error('Error loading invoices:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load invoices",
+          variant: "destructive"
+        });
+        return;
+      }
       
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load invoices",
-        variant: "destructive"
-      });
-    } else {
       // Transform database invoices to frontend Invoice type
       const transformedInvoices = (data || []).map(transformDatabaseInvoice);
       setInvoices(transformedInvoices);
+    } catch (error) {
+      console.error('Unexpected error loading invoices:', error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while loading invoices",
+        variant: "destructive"
+      });
     }
   };
 
@@ -180,7 +191,7 @@ const Index = () => {
         .from('profiles')
         .upsert({
           id: user.id,
-          email: user.email,
+          email: user.email || '',
           business_name: profile.name,
           business_phone: profile.phone,
           business_address: profile.address,
@@ -195,9 +206,10 @@ const Index = () => {
         description: "Business profile setup completed!"
       });
     } catch (error: any) {
+      console.error('Error completing business setup:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to complete business setup",
         variant: "destructive"
       });
     }
@@ -211,7 +223,7 @@ const Index = () => {
         .from('profiles')
         .upsert({
           id: user.id,
-          email: user.email,
+          email: user.email || '',
           business_name: 'My Business'
         });
         
@@ -219,9 +231,10 @@ const Index = () => {
       
       setCurrentState('dashboard');
     } catch (error: any) {
+      console.error('Error skipping business setup:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to skip business setup",
         variant: "destructive"
       });
     }
@@ -251,9 +264,10 @@ const Index = () => {
       await saveCustomer(invoice.customer);
       
     } catch (error: any) {
+      console.error('Error saving invoice:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to save invoice",
         variant: "destructive"
       });
     }
@@ -269,7 +283,7 @@ const Index = () => {
         .select('id')
         .eq('user_id', user.id)
         .eq('name', customer.name)
-        .single();
+        .maybeSingle();
         
       if (!existing) {
         await supabase
@@ -283,6 +297,7 @@ const Index = () => {
           });
       }
     } catch (error) {
+      console.error('Error saving customer:', error);
       // Ignore errors for customer saving
     }
   };

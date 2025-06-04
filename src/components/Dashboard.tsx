@@ -46,13 +46,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onLogout, businessNam
       color: 'from-green-500 to-green-600'
     },
     {
-      id: 'duplicate-invoice',
-      title: 'Duplicate Invoice',
-      description: 'Copy previous invoice for recurring clients',
-      icon: Copy,
-      color: 'from-purple-500 to-purple-600'
-    },
-    {
       id: 'customers',
       title: 'Customer List',
       description: 'Manage your customer database',
@@ -74,35 +67,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onLogout, businessNam
       color: 'from-pink-500 to-pink-600'
     },
     {
-      id: 'payment-tracking',
-      title: 'Payment Tracking',
-      description: 'Track paid and pending invoices',
-      icon: CreditCard,
-      color: 'from-teal-500 to-teal-600'
-    },
-    {
-      id: 'bulk-actions',
-      title: 'Bulk Actions',
-      description: 'Process multiple invoices at once',
-      icon: History,
-      color: 'from-red-500 to-red-600'
-    },
-    {
-      id: 'multi-currency',
-      title: 'Multi-Currency',
-      description: 'Support for multiple currencies',
-      icon: Globe,
-      color: 'from-yellow-500 to-yellow-600',
-      pro: true
-    },
-    {
-      id: 'printer-integration',
-      title: 'Printer Integration',
-      description: 'Connect to thermal printers',
-      icon: Printer,
-      color: 'from-gray-500 to-gray-600'
-    },
-    {
       id: 'business-profile',
       title: 'Business Profile',
       description: 'Update your business information',
@@ -117,6 +81,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onLogout, businessNam
     { label: 'Total Customers', value: '156', change: '+5%' },
     { label: 'Avg. Invoice Value', value: '₹1,875', change: '+3%' }
   ];
+
+  const handleFeatureClick = (featureId: string) => {
+    setSidebarOpen(false);
+    onNavigate(featureId);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
@@ -220,26 +189,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onLogout, businessNam
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature) => {
               const IconComponent = feature.icon;
-              const isLocked = feature.pro && !isPro;
               
               return (
                 <Card 
                   key={feature.id}
-                  className={`bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
+                  className={`bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-105 ${
                     feature.primary ? 'ring-2 ring-blue-500 ring-opacity-50' : ''
-                  } ${isLocked ? 'opacity-60' : 'hover:scale-105'}`}
-                  onClick={() => !isLocked && onNavigate(feature.id)}
+                  }`}
+                  onClick={() => handleFeatureClick(feature.id)}
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${feature.color} flex items-center justify-center`}>
                         <IconComponent className="w-6 h-6 text-white" />
                       </div>
-                      {isLocked && (
-                        <div className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full font-medium">
-                          Pro
-                        </div>
-                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
