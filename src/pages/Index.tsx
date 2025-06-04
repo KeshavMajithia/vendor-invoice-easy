@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -372,6 +371,7 @@ const Index = () => {
         return (
           <InvoiceTemplates
             onBack={() => setView('dashboard')}
+            onUseTemplate={handleCreateFromTemplate}
             user={user}
           />
         );
