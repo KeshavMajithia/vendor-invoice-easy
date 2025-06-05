@@ -55,20 +55,20 @@ const BillList = ({ bills, onDelete }: BillListProps) => {
             <tbody>
               ${bill.items.map(item => `
                 <tr>
-                  <td>${item.product_name}</td>
-                  <td>${item.quantity}</td>
-                  <td>₹${item.price.toFixed(2)}</td>
-                  <td>₹${item.total.toFixed(2)}</td>
+                  <td>${item.product_name || ''}</td>
+                  <td>${item.quantity || 0}</td>
+                  <td>₹${(item.price || 0).toFixed(2)}</td>
+                  <td>₹${(item.total || 0).toFixed(2)}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
 
           <div class="totals">
-            <p><strong>Subtotal: ₹${bill.subtotal.toFixed(2)}</strong></p>
-            ${bill.tax_amount > 0 ? `<p><strong>Tax: ₹${bill.tax_amount.toFixed(2)}</strong></p>` : ''}
-            ${bill.discount_amount > 0 ? `<p><strong>Discount: -₹${bill.discount_amount.toFixed(2)}</strong></p>` : ''}
-            <p style="font-size: 18px;"><strong>Total: ₹${bill.total_amount.toFixed(2)}</strong></p>
+            <p><strong>Subtotal: ₹${(bill.subtotal || 0).toFixed(2)}</strong></p>
+            ${(bill.tax_amount || 0) > 0 ? `<p><strong>Tax: ₹${(bill.tax_amount || 0).toFixed(2)}</strong></p>` : ''}
+            ${(bill.discount_amount || 0) > 0 ? `<p><strong>Discount: -₹${(bill.discount_amount || 0).toFixed(2)}</strong></p>` : ''}
+            <p style="font-size: 18px;"><strong>Total: ₹${(bill.total_amount || 0).toFixed(2)}</strong></p>
           </div>
         </body>
       </html>
@@ -120,7 +120,7 @@ const BillList = ({ bills, onDelete }: BillListProps) => {
                     {bill.payment_status}
                   </Badge>
                   <div className="text-right">
-                    <p className="font-semibold">₹{bill.total_amount.toFixed(2)}</p>
+                    <p className="font-semibold">₹{(bill.total_amount || 0).toFixed(2)}</p>
                   </div>
                 </div>
               </div>
@@ -141,8 +141,8 @@ const BillList = ({ bills, onDelete }: BillListProps) => {
                   <div className="space-y-1">
                     {bill.items.slice(0, 3).map((item, index) => (
                       <div key={index} className="flex justify-between text-sm">
-                        <span>{item.product_name} x {item.quantity}</span>
-                        <span>₹{item.total.toFixed(2)}</span>
+                        <span>{item.product_name || 'Unknown Product'} x {item.quantity || 0}</span>
+                        <span>₹{(item.total || 0).toFixed(2)}</span>
                       </div>
                     ))}
                     {bill.items.length > 3 && (

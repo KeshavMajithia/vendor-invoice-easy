@@ -43,13 +43,13 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
       const product = products.find(p => p.id === value);
       if (product) {
         newItems[index].product_name = product.name;
-        newItems[index].price = product.price;
-        newItems[index].total = product.price * newItems[index].quantity;
+        newItems[index].price = product.price || 0;
+        newItems[index].total = (product.price || 0) * (newItems[index].quantity || 1);
       }
     }
 
     if (field === 'quantity' || field === 'price') {
-      newItems[index].total = newItems[index].price * newItems[index].quantity;
+      newItems[index].total = (newItems[index].price || 0) * (newItems[index].quantity || 1);
     }
 
     setItems(newItems);
@@ -59,8 +59,8 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-  const total = subtotal + formData.tax_amount - formData.discount_amount;
+  const subtotal = items.reduce((sum, item) => sum + (item.total || 0), 0);
+  const total = subtotal + (formData.tax_amount || 0) - (formData.discount_amount || 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +157,7 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
                           <option value="">Select Product</option>
                           {products.map(product => (
                             <option key={product.id} value={product.id}>
-                              {product.name} (Stock: {product.quantity_in_stock} {product.unit})
+                              {product.name} (Stock: {product.quantity_in_stock || 0} {product.unit || 'pcs'})
                             </option>
                           ))}
                         </select>
@@ -167,7 +167,7 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
                         <Input
                           type="number"
                           min="1"
-                          value={item.quantity}
+                          value={item.quantity || 1}
                           onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
                           required
                         />
@@ -177,7 +177,7 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
                         <Input
                           type="number"
                           step="0.01"
-                          value={item.price}
+                          value={item.price || 0}
                           onChange={(e) => updateItem(index, 'price', parseFloat(e.target.value) || 0)}
                           required
                         />
@@ -186,7 +186,7 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
                         <Label>Total (₹)</Label>
                         <Input
                           type="number"
-                          value={item.total.toFixed(2)}
+                          value={(item.total || 0).toFixed(2)}
                           readOnly
                           className="bg-gray-100"
                         />
@@ -260,11 +260,11 @@ const BillForm = ({ products, onSave, onCancel }: BillFormProps) => {
                     </div>
                     <div className="flex justify-between">
                       <span>Tax:</span>
-                      <span>₹{formData.tax_amount.toFixed(2)}</span>
+                      <span>₹{(formData.tax_amount || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Discount:</span>
-                      <span>-₹{formData.discount_amount.toFixed(2)}</span>
+                      <span>-₹{(formData.discount_amount || 0).toFixed(2)}</span>
                     </div>
                     <hr />
                     <div className="flex justify-between font-bold text-lg">
