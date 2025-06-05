@@ -49,10 +49,10 @@ const BillingSystem = ({ onBack, user }: BillingSystemProps) => {
       if (billsResponse.error) throw billsResponse.error;
       if (productsResponse.error) throw productsResponse.error;
 
-      // Transform the bill data to match our interface
+      // Transform the bill data to match our interface with proper type casting
       const transformedBills: Bill[] = (billsResponse.data || []).map(bill => ({
         ...bill,
-        items: Array.isArray(bill.items) ? bill.items : []
+        items: Array.isArray(bill.items) ? bill.items as any[] : []
       }));
 
       setBills(transformedBills);
