@@ -18,8 +18,11 @@ import Analytics from '@/components/Analytics';
 import BusinessProfile from '@/components/BusinessProfile';
 import BusinessSetup from '@/components/BusinessSetup';
 import SharedInvoiceView from '@/components/SharedInvoiceView';
+import InventoryManagement from '@/components/InventoryManagement';
+import BillingSystem from '@/components/BillingSystem';
+import EnhancedAnalytics from '@/components/EnhancedAnalytics';
 
-type View = 'landing' | 'auth' | 'dashboard' | 'create' | 'saved' | 'templates' | 'customers' | 'analytics' | 'profile' | 'setup' | 'shared';
+type View = 'landing' | 'auth' | 'dashboard' | 'create' | 'saved' | 'templates' | 'customers' | 'analytics' | 'profile' | 'setup' | 'shared' | 'inventory' | 'billing' | 'enhanced-analytics';
 
 const Index = () => {
   const [searchParams] = useSearchParams();
@@ -339,6 +342,9 @@ const Index = () => {
             onViewCustomers={() => setView('customers')}
             onViewAnalytics={() => setView('analytics')}
             onViewProfile={() => setView('profile')}
+            onViewInventory={() => setView('inventory')}
+            onViewBilling={() => setView('billing')}
+            onViewEnhancedAnalytics={() => setView('enhanced-analytics')}
             invoiceCount={invoices.length}
             totalRevenue={invoices.reduce((sum, inv) => sum + inv.total, 0)}
             user={user}
@@ -395,6 +401,30 @@ const Index = () => {
         return (
           <BusinessProfile
             onBack={() => setView('dashboard')}
+          />
+        );
+
+      case 'inventory':
+        return (
+          <InventoryManagement
+            onBack={() => setView('dashboard')}
+            user={user}
+          />
+        );
+
+      case 'billing':
+        return (
+          <BillingSystem
+            onBack={() => setView('dashboard')}
+            user={user}
+          />
+        );
+
+      case 'enhanced-analytics':
+        return (
+          <EnhancedAnalytics
+            onBack={() => setView('dashboard')}
+            user={user}
           />
         );
 
