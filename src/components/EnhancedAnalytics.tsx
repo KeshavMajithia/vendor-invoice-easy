@@ -16,11 +16,10 @@ interface EnhancedAnalyticsProps {
 const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState({
-    dailySales: [],
-    categorySales: [],
-    topProducts: [],
-    weeklySales: [],
-    monthlySales: []
+    dailySales: [] as any[],
+    categorySales: [] as any[],
+    topProducts: [] as any[],
+    recentTransactions: [] as any[]
   });
   const [selectedPeriod, setSelectedPeriod] = useState('week');
   const { toast } = useToast();
@@ -36,17 +35,11 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
 
     try {
       setLoading(true);
-
-      // Load different analytics based on selected period
-      const promises = [
-        loadDailySales(),
-        loadCategorySales(),
-        loadTopProducts(),
-        loadWeeklySales(),
-        loadMonthlySales()
-      ];
-
-      await Promise.all(promises);
+      await Promise.all([
+        loadRecentBills(),
+        loadProductAnalytics(),
+        loadInvoiceAnalytics()
+      ]);
     } catch (error: any) {
       console.error('Failed to load analytics:', error);
       toast({
@@ -59,140 +52,135 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
     }
   };
 
-  const loadDailySales = async () => {
-    const { data, error } = await supabase
-      .from('sales_summary')
-      .select('*')
-      .eq('user_id', user!.id)
-      .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-      .order('date');
+  const loadRecentBills = async () => {
+    try {
+      const { data: bills, error } = await supabase
+        .from('bills')
+        .select('*')
+        .eq('user_id', user!.id)
+        .gte('bill_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+        .order('bill_date');
 
-    if (error) throw error;
+      if (error) throw error;
 
-    setAnalytics(prev => ({
-      ...prev,
-      dailySales: data?.map(item => ({
-        date: new Date(item.date).toLocaleDateString(),
-        sales: item.total_sales,
-        profit: item.total_profit,
-        bills: item.total_bills,
-        invoices: item.total_invoices
-      })) || []
-    }));
+      // Process daily sales
+      const dailySalesMap = new Map();
+      
+      bills?.forEach(bill => {
+        const date = new Date(bill.bill_date).toLocaleDateString();
+        if (!dailySalesMap.has(date)) {
+          dailySalesMap.set(date, { date, sales: 0, bills: 0 });
+        }
+        const current = dailySalesMap.get(date);
+        current.sales += bill.total_amount;
+        current.bills += 1;
+      });
+
+      setAnalytics(prev => ({
+        ...prev,
+        dailySales: Array.from(dailySalesMap.values()),
+        recentTransactions: bills || []
+      }));
+    } catch (error) {
+      console.error('Failed to load bills:', error);
+    }
   };
 
-  const loadCategorySales = async () => {
-    const { data, error } = await supabase
-      .from('category_sales')
-      .select('category, total_sales, total_quantity, total_profit')
-      .eq('user_id', user!.id)
-      .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const loadProductAnalytics = async () => {
+    try {
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('user_id', user!.id);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    // Group by category
-    const grouped = data?.reduce((acc: any, item: any) => {
-      if (!acc[item.category]) {
-        acc[item.category] = {
-          category: item.category,
-          total_sales: 0,
-          total_quantity: 0,
-          total_profit: 0
+      // Group by category
+      const categoryMap = new Map();
+      const topProducts: any[] = [];
+
+      products?.forEach(product => {
+        const category = product.category || 'Uncategorized';
+        if (!categoryMap.has(category)) {
+          categoryMap.set(category, { category, total_value: 0, product_count: 0 });
+        }
+        const current = categoryMap.get(category);
+        current.total_value += product.price * product.quantity_in_stock;
+        current.product_count += 1;
+
+        // Add to top products based on stock value
+        topProducts.push({
+          product_name: product.name,
+          total_value: product.price * product.quantity_in_stock,
+          stock: product.quantity_in_stock,
+          price: product.price
+        });
+      });
+
+      // Sort top products by value
+      topProducts.sort((a, b) => b.total_value - a.total_value);
+
+      setAnalytics(prev => ({
+        ...prev,
+        categorySales: Array.from(categoryMap.values()),
+        topProducts: topProducts.slice(0, 10)
+      }));
+    } catch (error) {
+      console.error('Failed to load products:', error);
+    }
+  };
+
+  const loadInvoiceAnalytics = async () => {
+    try {
+      const { data: invoices, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('user_id', user!.id)
+        .gte('invoice_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+      if (error) throw error;
+
+      // Add invoice data to daily sales
+      const invoiceSalesMap = new Map();
+      
+      invoices?.forEach(invoice => {
+        const date = new Date(invoice.invoice_date).toLocaleDateString();
+        if (!invoiceSalesMap.has(date)) {
+          invoiceSalesMap.set(date, { date, sales: 0, invoices: 0 });
+        }
+        const current = invoiceSalesMap.get(date);
+        current.sales += invoice.total_amount;
+        current.invoices += 1;
+      });
+
+      // Merge with existing daily sales
+      setAnalytics(prev => {
+        const combined = new Map();
+        
+        // Add bill data
+        prev.dailySales.forEach(day => {
+          combined.set(day.date, { ...day });
+        });
+        
+        // Add invoice data
+        Array.from(invoiceSalesMap.values()).forEach(day => {
+          if (combined.has(day.date)) {
+            const existing = combined.get(day.date);
+            existing.sales += day.sales;
+            existing.invoices = day.invoices;
+          } else {
+            combined.set(day.date, { ...day, bills: 0 });
+          }
+        });
+
+        return {
+          ...prev,
+          dailySales: Array.from(combined.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
         };
-      }
-      acc[item.category].total_sales += item.total_sales;
-      acc[item.category].total_quantity += item.total_quantity;
-      acc[item.category].total_profit += item.total_profit;
-      return acc;
-    }, {});
-
-    setAnalytics(prev => ({
-      ...prev,
-      categorySales: Object.values(grouped || {})
-    }));
-  };
-
-  const loadTopProducts = async () => {
-    const { data, error } = await supabase
-      .from('product_sales')
-      .select(`
-        product_id,
-        quantity_sold,
-        total_sales,
-        total_profit,
-        products(name)
-      `)
-      .eq('user_id', user!.id)
-      .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-
-    if (error) throw error;
-
-    // Group by product
-    const grouped = data?.reduce((acc: any, item: any) => {
-      if (!acc[item.product_id]) {
-        acc[item.product_id] = {
-          product_id: item.product_id,
-          product_name: item.products?.name || 'Unknown',
-          quantity_sold: 0,
-          total_sales: 0,
-          total_profit: 0
-        };
-      }
-      acc[item.product_id].quantity_sold += item.quantity_sold;
-      acc[item.product_id].total_sales += item.total_sales;
-      acc[item.product_id].total_profit += item.total_profit;
-      return acc;
-    }, {});
-
-    const topProducts = Object.values(grouped || {})
-      .sort((a: any, b: any) => b.total_sales - a.total_sales)
-      .slice(0, 10);
-
-    setAnalytics(prev => ({
-      ...prev,
-      topProducts
-    }));
-  };
-
-  const loadWeeklySales = async () => {
-    const { data, error } = await supabase
-      .from('weekly_sales_summary')
-      .select('*')
-      .eq('user_id', user!.id)
-      .order('week_start_date', { ascending: false })
-      .limit(12);
-
-    if (error) throw error;
-
-    setAnalytics(prev => ({
-      ...prev,
-      weeklySales: data?.map(item => ({
-        week: `Week ${new Date(item.week_start_date).toLocaleDateString()}`,
-        sales: item.total_sales,
-        profit: item.total_profit
-      })) || []
-    }));
-  };
-
-  const loadMonthlySales = async () => {
-    const { data, error } = await supabase
-      .from('monthly_sales_summary')
-      .select('*')
-      .eq('user_id', user!.id)
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
-      .limit(12);
-
-    if (error) throw error;
-
-    setAnalytics(prev => ({
-      ...prev,
-      monthlySales: data?.map(item => ({
-        month: `${item.month}/${item.year}`,
-        sales: item.total_sales,
-        profit: item.total_profit
-      })) || []
-    }));
+      });
+    } catch (error) {
+      console.error('Failed to load invoices:', error);
+    }
   };
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -207,6 +195,10 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
       </div>
     );
   }
+
+  const totalSales = analytics.dailySales.reduce((sum, item) => sum + item.sales, 0);
+  const topCategory = analytics.categorySales.length > 0 ? analytics.categorySales[0]?.category : 'N/A';
+  const bestProduct = analytics.topProducts.length > 0 ? analytics.topProducts[0]?.product_name : 'N/A';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
@@ -240,13 +232,11 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Sales (30 days)</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                ₹{analytics.dailySales.reduce((sum: number, item: any) => sum + item.sales, 0).toFixed(2)}
-              </div>
+              <div className="text-2xl font-bold">₹{totalSales.toFixed(2)}</div>
             </CardContent>
           </Card>
 
@@ -256,21 +246,17 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {analytics.categorySales[0]?.category || 'N/A'}
-              </div>
+              <div className="text-2xl font-bold">{topCategory}</div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Best Seller</CardTitle>
+              <CardTitle className="text-sm font-medium">Best Product</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {analytics.topProducts[0]?.product_name || 'N/A'}
-              </div>
+              <div className="text-2xl font-bold">{bestProduct}</div>
             </CardContent>
           </Card>
 
@@ -305,10 +291,10 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
             </CardContent>
           </Card>
 
-          {/* Category Sales Distribution */}
+          {/* Category Distribution */}
           <Card>
             <CardHeader>
-              <CardTitle>Sales by Category</CardTitle>
+              <CardTitle>Inventory Value by Category</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -321,9 +307,9 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
                     label={({ category, percent }) => `${category} ${(percent * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
-                    dataKey="total_sales"
+                    dataKey="total_value"
                   >
-                    {analytics.categorySales.map((entry: any, index: number) => (
+                    {analytics.categorySales.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -334,12 +320,11 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
           </Card>
         </div>
 
-        {/* Top Products and Period Sales */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top Selling Products */}
+        {/* Top Products */}
+        <div className="grid grid-cols-1 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>Top Selling Products</CardTitle>
+              <CardTitle>Top Products by Value</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -348,29 +333,7 @@ const EnhancedAnalytics = ({ onBack, user }: EnhancedAnalyticsProps) => {
                   <XAxis dataKey="product_name" />
                   <YAxis />
                   <Tooltip />
-                  <Bar dataKey="total_sales" fill="#8884d8" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Weekly/Monthly Sales */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {selectedPeriod === 'week' ? 'Weekly' : 'Monthly'} Sales
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart 
-                  data={selectedPeriod === 'week' ? analytics.weeklySales : analytics.monthlySales}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey={selectedPeriod === 'week' ? 'week' : 'month'} />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="sales" fill="#82ca9d" />
+                  <Bar dataKey="total_value" fill="#8884d8" />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

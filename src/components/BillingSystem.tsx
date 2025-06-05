@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +5,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Product, Bill } from '@/types/product';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Plus, Receipt, Send, Printer } from 'lucide-react';
+import { ArrowLeft, Plus, Receipt } from 'lucide-react';
+import { updateProductStock } from '@/utils/stockHelpers';
 import BillForm from '@/components/BillForm';
 import BillList from '@/components/BillList';
 
@@ -49,7 +49,13 @@ const BillingSystem = ({ onBack, user }: BillingSystemProps) => {
       if (billsResponse.error) throw billsResponse.error;
       if (productsResponse.error) throw productsResponse.error;
 
-      setBills(billsResponse.data || []);
+      // Transform the bill data to match our interface
+      const transformedBills: Bill[] = (billsResponse.data || []).map(bill => ({
+        ...bill,
+        items: Array.isArray(bill.items) ? bill.items : []
+      }));
+
+      setBills(transformedBills);
       setProducts(productsResponse.data || []);
     } catch (error: any) {
       console.error('Failed to load data:', error);
@@ -67,23 +73,31 @@ const BillingSystem = ({ onBack, user }: BillingSystemProps) => {
     if (!user) return;
 
     try {
-      // Generate bill number
-      const { data: billNumber, error: billNumberError } = await supabase
-        .rpc('generate_bill_number', { user_uuid: user.id });
-
-      if (billNumberError) throw billNumberError;
+      // Generate bill number manually
+      const timestamp = Date.now();
+      const billNumber = `BILL-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${timestamp.toString().slice(-4)}`;
 
       // Generate QR code token for sharing
-      const qrToken = `bill-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const qrToken = `bill-${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
       const qrExpires = new Date();
       qrExpires.setHours(qrExpires.getHours() + 24); // Expires in 24 hours
 
       const { data, error } = await supabase
         .from('bills')
         .insert({
-          ...billData,
           user_id: user.id,
           bill_number: billNumber,
+          customer_name: billData.customer_name || '',
+          customer_phone: billData.customer_phone || '',
+          customer_email: billData.customer_email || '',
+          items: billData.items as any, // Cast to match database JSON type
+          subtotal: billData.subtotal,
+          tax_amount: billData.tax_amount,
+          discount_amount: billData.discount_amount,
+          total_amount: billData.total_amount,
+          payment_method: billData.payment_method,
+          payment_status: billData.payment_status,
+          bill_date: billData.bill_date,
           qr_code_token: qrToken,
           qr_expires_at: qrExpires.toISOString()
         })
@@ -94,13 +108,8 @@ const BillingSystem = ({ onBack, user }: BillingSystemProps) => {
 
       // Update inventory for each item
       for (const item of billData.items) {
-        await supabase
-          .from('products')
-          .update({
-            quantity_in_stock: supabase.sql`quantity_in_stock - ${item.quantity}`
-          })
-          .eq('id', item.product_id)
-          .eq('user_id', user.id);
+        // Use our helper to update stock
+        await updateProductStock(item.product_id, -item.quantity, user.id);
 
         // Record inventory transaction
         await supabase

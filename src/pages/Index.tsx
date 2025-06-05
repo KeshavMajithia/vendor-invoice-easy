@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -104,7 +105,7 @@ const Index = () => {
       }
     } catch (error) {
       console.error('Business setup check failed:', error);
-      setView('dashboard'); // Fallback to dashboard
+      setView('dashboard');
     }
   };
 
@@ -300,9 +301,8 @@ const Index = () => {
     );
   }
 
-  // Error boundary
+  // Error boundary and render logic
   try {
-    // Render based on current view
     switch (view) {
       case 'landing':
         return (
@@ -342,9 +342,6 @@ const Index = () => {
             onViewCustomers={() => setView('customers')}
             onViewAnalytics={() => setView('analytics')}
             onViewProfile={() => setView('profile')}
-            onViewInventory={() => setView('inventory')}
-            onViewBilling={() => setView('billing')}
-            onViewEnhancedAnalytics={() => setView('enhanced-analytics')}
             invoiceCount={invoices.length}
             totalRevenue={invoices.reduce((sum, inv) => sum + inv.total, 0)}
             user={user}
